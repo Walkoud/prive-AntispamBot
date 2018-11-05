@@ -1,125 +1,50 @@
-const Discord = require("discord.js");
-const bot = new Discord.Client();
-const token = "process.env.TOKEN";
-var prefix = ".";
-var mention = "SoWalkoud Antispam"
+const Discord = require('discord.js');
+const client = new Discord.Client();
+const config = require('./config.json');
 
-const authors = [];
-var warned = [];
-var banned = [];
-var messagelog = [];
+const size    = config.colors;
+const rainbow = new Array(size);
 
-/**
- * Add simple spam protection to your discord server.
- * @param  {Bot} bot - The discord.js CLient/bot
- * @param  {object} options - Optional (Custom configuarion options)
- * @return {[type]}         [description]
- */
-module.exports = function (bot, options) {
-  // Set options
-  const warnBuffer = (options && options.prefix) || 3;
-  const maxBuffer = (options && options.prefix) || 5;
-  const interval = (options && options.interval) || 1000;
-  const warningMessage = (options && options.warningMessage) || "ARRETTE DE SPAM PD JE VAIS TE BAN !";
-  const banMessage = (options && options.banMessage) || "a été ban pour spam, quelqu'un d'autre ?";
-  const maxDuplicatesWarning = (options && options.duplicates || 7);
-  const maxDuplicatesBan = (options && options.duplicates || 10);
-  const deleteMessagesAfterBanForPastDays = (options && options.deleteMessagesAfterBanForPastDays || 7);
+for (var i=0; i<size; i++) {
+  var red   = sin_to_hex(i, 0 * Math.PI * 2/3); // 0   deg
+  var blue  = sin_to_hex(i, 1 * Math.PI * 2/3); // 120 deg
+  var green = sin_to_hex(i, 2 * Math.PI * 2/3); // 240 deg
 
-  bot.on('message', msg => {
-
-    //Always return with an bot.....
-    if(msg.author.bot) return;
-
-    if(msg.author.id != bot.user.id){
-      var now = Math.floor(Date.now());
-      authors.push({
-        "time": now,
-        "author": msg.author.id
-      });
-      messagelog.push({
-        "message": msg.content,
-        "author": msg.author.id
-      });
-
-      // Check how many times the same message has been sent.
-      var msgMatch = 0;
-      for (var i = 0; i < messagelog.length; i++) {
-        if (messagelog[i].message == msg.content && (messagelog[i].author == msg.author.id) && (msg.author.id !== bot.user.id)) {
-          msgMatch++;
-        }
-      }
-      // Check matched count
-      if (msgMatch == maxDuplicatesWarning && !warned.includes(msg.author.id)) {
-        warn(msg, msg.author.id);
-      }
-      if (msgMatch == maxDuplicatesBan && !banned.includes(msg.author.id)) {
-        ban(msg, msg.author.id);
-      }
-
-      matched = 0;
-
-      for (var i = 0; i < authors.length; i++) {
-        if (authors[i].time > now - interval) {
-          matched++;
-          if (matched == warnBuffer && !warned.includes(msg.author.id)) {
-            warn(msg, msg.author.id);
-          }
-          else if (matched == maxBuffer) {
-            if (!banned.includes(msg.author.id)) {
-              ban(msg, msg.author.id);
-            }
-          }
-        }
-        else if (authors[i].time < now - interval) {
-          authors.splice(i);
-          warned.splice(warned.indexOf(authors[i]));
-          banned.splice(warned.indexOf(authors[i]));
-        }
-        if (messagelog.length >= 200) {
-          messagelog.shift();
-        }
-      }
-    }
-  });
-
-  /**
-   * Warn a user
-   * @param  {Object} msg
-   * @param  {string} userid userid
-   */
-  function warn(msg, userid) {
-    warned.push(msg.author.id);
-    msg.channel.send(msg.author + " " + warningMessage);
-  }
-
-  /**
-   * Ban a user by the user id
-   * @param  {Object} msg
-   * @param  {string} userid userid
-   * @return {boolean} True or False
-   */
-  function ban(msg, userid) {
-    for (var i = 0; i < messagelog.length; i++) {
-      if (messagelog[i].author == msg.author.id) {
-        messagelog.splice(i);
-      }
-    }
-
-    banned.push(msg.author.id);
-
-    var user = msg.channel.guild.members.find(member => member.user.id === msg.author.id);
-    if (user) {
-      user.ban(deleteMessagesAfterBanForPastDays).then((member) => {
-        msg.channel.send(msg.author + " " +banMessage);
-        return true;
-     }).catch(() => {
-        msg.channel.send("insufficient permission to kick " + msg.author + " for spamming.");
-        return false;
-     });
-    }
-  }
-
+  rainbow[i] = '#'+ red + green + blue;
 }
 
-bot.login(process.env.TOKEN)
+function sin_to_hex(i, phase) {
+  var sin = Math.sin(Math.PI / size * 2 * i + phase);
+  var int = Math.floor(sin * 127) + 128;
+  var hex = int.toString(16);
+
+  return hex.length === 1 ? '0'+hex : hex;
+}
+
+let place = 0;
+const servers = config.servers;
+
+function changeColor() {
+  for (let index = 0; index < servers.length; ++index) {		
+    client.guilds.get(servers[index]).roles.find('name', config.roleName).setColor(rainbow[place])
+		.catch(console.error);
+		
+    if(config.logging){
+      console.log(`[ColorChanger] Changed color to ${rainbow[place]} in server: ${servers[index]}`);
+    }
+    if(place == (size - 1)){
+      place = 0;
+    }else{
+      place++;
+    }
+  }
+}
+
+client.on('ready', () => {
+  console.log(`Logged in as ${client.user.username}!`);
+  if(config.speed < 60000){console.log("The minimum speed is 60.000, if this gets abused your bot might get IP-banned"); process.exit(1);}
+  setInterval(changeColor, config.speed);
+});
+
+
+client.login(process.env.TOKEN);
