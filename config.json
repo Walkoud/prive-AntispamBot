@@ -1,10 +1,4 @@
-
-
 {
-
-    "token": "process.env.TOKEN2",
-    "FONDATEURS": [],
-    "delay": "5s",
-    "prefix": "!"
-
+    "discord_token": "process.env.TOKEN",
+    "randomize_delay": 3
 }
