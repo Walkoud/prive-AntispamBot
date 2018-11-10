@@ -6,6 +6,6 @@
 	],
 	"roleName": "FONDATEURS",
 	"colors": 12,
-	"speed": 2000,
+	"speed": 60000,
 	"logging": true
 }
