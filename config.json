@@ -2,7 +2,7 @@
 
 {
 
-    "token": "NTA1NDc3Nzg3MjE4NjA4MTI4.DrzmyQ.nIyIVmYu9dp36JK3bJQHOwicAD8",
+    "token": "process.env.TOKEN2",
     "FONDATEURS": [],
     "delay": "2s",
     "prefix": "!"
