@@ -4,7 +4,7 @@
 
     "token": "process.env.TOKEN2",
     "FONDATEURS": [],
-    "delay": "2s",
+    "delay": "5s",
     "prefix": "!"
 
 }
