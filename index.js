@@ -1,82 +1,125 @@
-var discord = require('discord.js');
-var fs = require('fs');
-var randomColour = require('randomcolor'); // yes, the creator of this package does not speak the real english
-var Config = require('./config.json');
+var Discord = require("discord.js");
+var client = new Discord.Client();
 
-class Bot {
-    constructor(){
-        this.servers = require('./servers.json');
-        this.discordClient = new discord.Client({sync: true});
-        
-        this.discordClient.on("ready", () => {this.initialize();});
-        
-        this.discordClient.on("message", (msg) => {this.processMessage(msg)});
-        
-        this.discordClient.login(Config.discord_token);
-    }
-    
-    initialize() {
-        this.log("Connected to discord.");
-        
-        setInterval(() => {
-            this.randomizeRoleColors();
-        }, Config.randomize_delay*1000);
-    }
-    
-    processMessage(msg) {
-        if(msg.content.startsWith(">addrole")) {
-            for(var role of msg.mentions.roles.array()) {
-                msg.reply("Added " + role + " to list of rainbow roles.");
-                
-                this.addRainbowRole(msg.guild.id, role.id);
-            }
-        }
-    }
-    
-    randomizeRoleColors() {
-        for(var server in this.servers) {
-            var liveGuild = this.discordClient.guilds.get(server);
-            
-            if (!liveGuild) {
-                this.error("Guild with ID " + server+ " no longer exists or the bot has been removed from it.");
-                continue;
-            }
-            
-            for(var role of this.servers[server]) {
-                var liveRole = liveGuild.roles.get(role);
-                
-                liveRole.setColor(randomColour(), "Rainbowbot random role color randomizer.");
-            }
-        }
-    }
-    
-    addRainbowRole(guild, role) {
-        if(this.servers[guild] == undefined) {
-            this.servers[guild] = [];
-        }
-        
-        for(var existingRole of this.servers[guild]) {
-            if(existingRole == role) {
-                return "That role has already been added.";
-            }
-        }
-        
-        this.servers[guild].push(role);
-        this.saveServers();
-    } 
-    
-    saveServers() {
-        fs.writeFileSync("./servers.json", JSON.stringify(this.servers), "utf8");
-        this.log("Saved servers file.");
-    }
-    
-    log(message) {
-        console.log("\x1b[32mINFO\x1b[37m - \x1b[0m" + message);
-    }
-    
-    error(message) {
-        console.log("\x1b[31mERROR\x1b[37m - \x1b[0m" + message);
-    }
-}
+client.login("process.env.TOKEN");
 
-var instance = new Bot();
+client.on("ready", () => {
+	console.log("I'm ready to do work!");
+});
+
+const slowmode_mentions = new Map();
+const slowmode_links = new Map();
+const slowmode_attachments = new Map();
+const ratelimit = 7500; // within 7.5 seconds
+const logChannel = "LOG CHANNEL ID HERE"; // logs channel id
+
+client.on("message", message => {
+
+	if (message.content.startsWith("!ping")) {
+		let startTime = Date.now();
+		message.channel.send("Ping...").then(newMessage => {
+			let endTime = Date.now();
+			newMessage.edit("Pong! Took `" + Math.round(endTime - startTime) + "ms`!");
+		});
+	}
+
+	function log(logmessage) {
+		if (message.guild.channels.has(logChannel)) {
+			message.guild.channels.get(logChannel).send({ embed: logmessage}).then().catch(err => console.log(err));
+		}
+	}
+
+	// set the max mentions/links/attachments that are allowed
+	let banLevel = {
+		"mentions": 5,
+		"links": 3,
+		"attachments": 10
+	};
+
+	// Ignore bots, DMs, Webhooks, if this bot has no perms, and Mods
+	if (message.author.bot || !message.guild || !message.member || !message.guild.member(client.user).hasPermission("BAN_MEMBERS") || message.member.hasPermission("MANAGE_MESSAGES")) return;
+
+	// Ignore if 1 mention and it's a bot (bot interaction)
+	if (message.mentions.users.size == 1 && message.mentions.users.first().bot) return;
+
+	// If there is no trace of the author in the slowmode map, add them.
+	let entry_mentions = slowmode_mentions.get(message.author.id);
+	let entry_links = slowmode_links.get(message.author.id);
+	let entry_attachments = slowmode_attachments.get(message.author.id);
+
+	if (!entry_mentions) {
+		entry_mentions = 0;
+		slowmode_mentions.set(message.author.id, entry_mentions);
+	}
+	if (!entry_links) {
+		entry_links = 0;
+		slowmode_links.set(message.author.id, entry_links);
+	}
+	if (!entry_attachments) {
+		entry_attachments = 0;
+		slowmode_attachments.set(message.author.id, entry_attachments);
+	}
+
+	// Count the unique user and roles mentions, links and attachments
+	entry_mentions += message.mentions.users.size + message.mentions.roles.size;
+	entry_links += message.embeds.length;
+	entry_attachments += message.attachments.size;
+	// Set all the amounts in the slowmode maps
+	slowmode_mentions.set(message.author.id, entry_mentions);
+	slowmode_links.set(message.author.id, entry_links);
+	slowmode_attachments.set(message.author.id, entry_attachments);
+
+	// If the total number of links in the last ratelimit is above the server ban level, ban user
+	if (entry_links > banLevel.links) {
+		message.member.ban(1).then(member => {
+			message.channel.send(`:ok_hand: banned \`${message.author.tag}\` for \`link spam\``);
+			log(new Discord.RichEmbed().setTitle(':hammer: Banned').setColor(0xFF0000).setTimestamp().addField('User', `${message.author.tag} (${message.author.id})`).addField('Reason', `Posting too many links (${entry_links}x)`));
+			slowmode_links.delete(message.author.id);
+		})
+		.catch(e => {
+			log(new Discord.RichEmbed().setTitle(':x: ERROR').setColor(0x000001).setTimestamp().addField('User', `${message.author.tag} (${message.author.id})`).addField('Reason', `Could not ban because they have a higher role`));
+		});
+	} else {
+		setTimeout(()=> {
+			entry_links -= message.embeds.length;
+			if(entry_links <= 0) slowmode_links.delete(message.author.id);
+		}, ratelimit);
+	}
+
+	if (entry_mentions > banLevel.mentions) {
+		message.member.ban(1).then(member => {
+			message.channel.send(`:ok_hand: banned \`${message.author.tag}\` for \`mention spam\``);
+			log(new Discord.RichEmbed().setTitle(':hammer: Banned').setColor(0xFF0000).setTimestamp().addField('User', `${message.author.tag} (${message.author.id})`).addField('Reason', `Mentioning too many users (${entry_mentions}x)`));
+			slowmode_mentions.delete(message.author.id);
+		})
+		.catch(e => {
+			log(new Discord.RichEmbed().setTitle(':x: ERROR').setColor(0x000001).setTimestamp().addField('User', `${message.author.tag} (${message.author.id})`).addField('Reason', `Could not ban because they have a higher role`));
+		});
+	} else {
+		setTimeout(()=> {
+			entry_mentions -= message.mentions.users.size + message.mentions.roles.size;
+			if(entry_mentions <= 0) slowmode_mentions.delete(message.author.id);
+		}, ratelimit);
+	}
+
+	if (entry_attachments > banLevel.attachments) {
+		message.member.ban(1).then(member => {
+			message.channel.send(`:ok_hand: banned \`${message.author.tag}\` for \`image spam\``);
+			log(new Discord.RichEmbed().setTitle(':hammer: Banned').setColor(0xFF0000).setTimestamp().addField('User', `${message.author.tag} (${message.author.id})`).addField('Reason', `Posting too many images (${entry_attachments}x)`));
+			slowmode_attachments.delete(message.author.id);
+		})
+		.catch(e => {
+			log(new Discord.RichEmbed().setTitle(':x: ERROR').setColor(0x000001).setTimestamp().addField('User', `${message.author.tag} (${message.author.id})`).addField('Reason', `Could not ban because they have a higher role`));
+		});
+	} else {
+		setTimeout(()=> {
+			entry_attachments -= message.attachments.size;
+			if(entry_attachments <= 0) slowmode_attachments.delete(message.author.id);
+		}, ratelimit);
+	}
+
+});
+
+process.on("unhandledRejection", err => {
+	console.error("Uncaught Promise Error: \n" + err.stack);
+});
